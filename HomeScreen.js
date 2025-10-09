@@ -1,23 +1,20 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Button, Platform } from 'react-native';
+import { View, Text, StyleSheet, Button } from 'react-native';
 import { Accelerometer, Gyroscope } from 'expo-sensors';
-import * as Location from 'expo-location';
-import MapView, { Marker } from 'react-native-maps';
 
-export default function App() {
+export default function HomeScreen({ navigation }) {
   const [accData, setAccData] = useState({ x: 0, y: 0, z: 0 });
   const [gyroData, setGyroData] = useState({ x: 0, y: 0, z: 0 });
   const [fallDetected, setFallDetected] = useState(false);
   const [timer, setTimer] = useState(0);
-  const [location, setLocation] = useState(null);
   const [alertCancelled, setAlertCancelled] = useState(false);
+  const [alertSent, setAlertSent] = useState(false);
 
+  let fallStartTime = null;
   const FREE_FALL_THRESHOLD = 0.5;
   const IMPACT_THRESHOLD = 2.5;
   const FALL_TIME_WINDOW = 1000;
-  let fallStartTime = null;
 
-  // Sensor listeners
   useEffect(() => {
     Accelerometer.setUpdateInterval(50);
     Gyroscope.setUpdateInterval(50);
@@ -30,7 +27,6 @@ export default function App() {
       if (magnitude < FREE_FALL_THRESHOLD && !fallStartTime) {
         fallStartTime = currentTime;
       }
-
       if (fallStartTime && currentTime - fallStartTime < FALL_TIME_WINDOW) {
         if (magnitude > IMPACT_THRESHOLD && !fallDetected) {
           setFallDetected(true);
@@ -38,58 +34,36 @@ export default function App() {
           fallStartTime = null;
         }
       }
-
       if (fallStartTime && currentTime - fallStartTime >= FALL_TIME_WINDOW) {
         fallStartTime = null;
       }
     });
 
     const gyroSub = Gyroscope.addListener(data => setGyroData(data));
-
-    return () => {
-      accSub.remove();
-      gyroSub.remove();
-    };
+    return () => { accSub.remove(); gyroSub.remove(); };
   }, [fallDetected]);
 
-  // Countdown timer
   useEffect(() => {
     if (timer > 0) {
       const interval = setInterval(() => setTimer(t => t - 1), 1000);
       return () => clearInterval(interval);
-    } else if (fallDetected && !alertCancelled && timer === 0) {
-      // Timer ended → get location
-      (async () => {
-        let { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          alert('Permission to access location was denied!');
-          return;
-        }
-        let loc = await Location.getCurrentPositionAsync({});
-        setLocation({
-          latitude: loc.coords.latitude,
-          longitude: loc.coords.longitude,
-          latitudeDelta: 0.005,
-          longitudeDelta: 0.005,
-        });
-      })();
+    } else if (timer === 0 && fallDetected) {
+      setAlertSent(true);
     }
   }, [timer]);
 
-  // Cancel alert
   const cancelAlert = () => {
-    setAlertCancelled(true);
     setFallDetected(false);
     setTimer(0);
-    setLocation(null);
-    setTimeout(() => setAlertCancelled(false), 5000); // clears "alert cancelled" message after 5s
+    setAlertSent(false);
+    setAlertCancelled(true);
+    setTimeout(() => setAlertCancelled(false), 5000);
   };
 
-  // Rescue arrived
-  const rescueArrived = () => {
+  const resetAlert = () => {
     setFallDetected(false);
     setTimer(0);
-    setLocation(null);
+    setAlertSent(false);
   };
 
   return (
@@ -104,26 +78,25 @@ export default function App() {
       <Text style={styles.text}>y: {gyroData.y.toFixed(2)}</Text>
       <Text style={styles.text}>z: {gyroData.z.toFixed(2)}</Text>
 
-      {fallDetected && timer > 0 && (
+      {fallDetected && !alertSent && (
         <View>
           <Text style={styles.alert}>Fall detected! Sending alert in {timer}s</Text>
-          <Button title="Cancel" onPress={cancelAlert} />
+          <Button title="Cancel Alert" onPress={cancelAlert} />
         </View>
       )}
 
-      {alertCancelled && <Text style={styles.alert}>Alert cancelled</Text>}
+      {alertCancelled && <Text style={styles.cancelled}>Alert Cancelled</Text>}
 
-      {fallDetected && timer === 0 && !alertCancelled && (
+      {alertSent && (
         <View>
-          <Text style={styles.alert}>ALERT SENT!</Text>
-          {location && (
-            <MapView style={styles.map} region={location}>
-              <Marker coordinate={location} title="Accident Location" />
-            </MapView>
-          )}
-          <Button title="Rescue Arrived" onPress={rescueArrived} />
+          <Text style={styles.alert}>🚨 ALERT SENT!</Text>
+          <Button title="Rescue Arrived" onPress={resetAlert} />
         </View>
       )}
+
+      <View style={{ marginTop: 30 }}>
+        <Button title="Profile" onPress={() => navigation.navigate('Profile')} />
+      </View>
     </View>
   );
 }
@@ -132,6 +105,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { fontSize: 22, fontWeight: 'bold', marginTop: 20 },
   text: { fontSize: 18, margin: 5 },
-  alert: { fontSize: 20, color: 'red', marginTop: 20, fontWeight: 'bold' },
-  map: { width: 300, height: 300, marginTop: 20 },
+  alert: { fontSize: 20, color: 'red', marginTop: 20, fontWeight: 'bold', textAlign: 'center' },
+  cancelled: { fontSize: 18, color: 'green', marginTop: 10, fontWeight: 'bold' },
 });
