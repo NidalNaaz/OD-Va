@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import { View, Text, StyleSheet, Button } from 'react-native';
 import { Accelerometer, Gyroscope } from 'expo-sensors';
 
 export default function App() {
@@ -8,13 +8,16 @@ export default function App() {
 
   const [fallDetected, setFallDetected] = useState(false);
   const [timer, setTimer] = useState(0);
+  const [alertCancelled, setAlertCancelled] = useState(false);
+  const [alertSent, setAlertSent] = useState(false);
+
+  const timerRef = useRef(null);
+  const fallStartTime = useRef(null);
 
   // Thresholds
-  const FREE_FALL_THRESHOLD = 0.5;   // below this = falling
-  const IMPACT_THRESHOLD = 2.5;      // above this = hitting ground
-  const FALL_TIME_WINDOW = 1000;     // 1s window to detect impact after free fall
-
-  let fallStartTime = null;
+  const FREE_FALL_THRESHOLD = 0.5;
+  const IMPACT_THRESHOLD = 2.5;
+  const FALL_TIME_WINDOW = 1000;
 
   useEffect(() => {
     Accelerometer.setUpdateInterval(50);
@@ -23,26 +26,33 @@ export default function App() {
     const accSub = Accelerometer.addListener(data => {
       setAccData(data);
       const magnitude = Math.sqrt(data.x ** 2 + data.y ** 2 + data.z ** 2);
-
       const currentTime = Date.now();
 
       // Detect start of fall
-      if (magnitude < FREE_FALL_THRESHOLD && !fallStartTime) {
-        fallStartTime = currentTime;
+      if (magnitude < FREE_FALL_THRESHOLD && !fallStartTime.current) {
+        fallStartTime.current = currentTime;
       }
 
       // Detect impact within the fall window
-      if (fallStartTime && currentTime - fallStartTime < FALL_TIME_WINDOW) {
+      if (
+        fallStartTime.current &&
+        currentTime - fallStartTime.current < FALL_TIME_WINDOW
+      ) {
         if (magnitude > IMPACT_THRESHOLD && !fallDetected) {
           setFallDetected(true);
           setTimer(10);
-          fallStartTime = null;
+          setAlertCancelled(false);
+          setAlertSent(false);
+          fallStartTime.current = null;
         }
       }
 
       // Reset if no impact detected in time
-      if (fallStartTime && currentTime - fallStartTime >= FALL_TIME_WINDOW) {
-        fallStartTime = null;
+      if (
+        fallStartTime.current &&
+        currentTime - fallStartTime.current >= FALL_TIME_WINDOW
+      ) {
+        fallStartTime.current = null;
       }
     });
 
@@ -57,10 +67,40 @@ export default function App() {
   // Countdown timer effect
   useEffect(() => {
     if (timer > 0) {
-      const interval = setInterval(() => setTimer(t => t - 1), 1000);
-      return () => clearInterval(interval);
+      timerRef.current = setInterval(() => {
+        setTimer(t => {
+          if (t <= 1) {
+            clearInterval(timerRef.current);
+            setAlertSent(true);
+            return 0;
+          }
+          return t - 1;
+        });
+      }, 1000);
     }
+    return () => clearInterval(timerRef.current);
   }, [timer]);
+
+  // Cancel alert
+  const cancelAlert = () => {
+    clearInterval(timerRef.current);
+    setTimer(0);
+    setFallDetected(false);
+    setAlertCancelled(true);
+
+    // Hide cancellation message after 5 seconds
+    setTimeout(() => {
+      setAlertCancelled(false);
+    }, 5000);
+  };
+
+  // Rescue arrived → reset everything
+  const handleRescueArrived = () => {
+    setFallDetected(false);
+    setAlertSent(false);
+    setTimer(0);
+    setAlertCancelled(false);
+  };
 
   return (
     <View style={styles.container}>
@@ -75,9 +115,24 @@ export default function App() {
       <Text style={styles.text}>z: {gyroData.z.toFixed(2)}</Text>
 
       {fallDetected && timer > 0 && (
-        <Text style={styles.alert}>Fall detected! Sending alert in {timer}s</Text>
+        <View style={styles.alertBox}>
+          <Text style={styles.alert}>
+            Fall detected! Sending alert in {timer}s
+          </Text>
+          <Button title="Cancel Alert" onPress={cancelAlert} color="red" />
+        </View>
       )}
-      {fallDetected && timer === 0 && <Text style={styles.alert}>ALERT SENT!</Text>}
+
+      {alertSent && (
+        <View style={styles.alertBox}>
+          <Text style={styles.alert}>🚨 ALERT SENT!</Text>
+          <Button title="Rescue Arrived" onPress={handleRescueArrived} />
+        </View>
+      )}
+
+      {alertCancelled && (
+        <Text style={styles.cancelled}>✅ Alert cancelled successfully</Text>
+      )}
     </View>
   );
 }
@@ -86,5 +141,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { fontSize: 22, fontWeight: 'bold', marginTop: 20 },
   text: { fontSize: 18, margin: 5 },
-  alert: { fontSize: 20, color: 'red', marginTop: 20, fontWeight: 'bold' }
+  alertBox: { marginTop: 20, alignItems: 'center' },
+  alert: { fontSize: 20, color: 'red', fontWeight: 'bold', marginBottom: 10 },
+  cancelled: { fontSize: 18, color: 'green', marginTop: 10, fontWeight: 'bold' },
 });
