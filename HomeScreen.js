@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Button, Alert, Linking, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Button, Alert, Linking, ScrollView, TouchableOpacity } from 'react-native';
 import { Accelerometer, Gyroscope } from 'expo-sensors';
 import * as Location from 'expo-location';
 import MapView, { Marker } from 'react-native-maps';
+import { MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 
 const GOOGLE_API_KEY = 'YOUR_API_KEY'; // Replace with your Google Maps API Key
 
@@ -137,30 +138,29 @@ export default function HomeScreen({ navigation, profile }) {
 
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.header}>Accelerometer</Text>
-      <Text style={styles.text}>x: {accData.x.toFixed(2)}</Text>
-      <Text style={styles.text}>y: {accData.y.toFixed(2)}</Text>
-      <Text style={styles.text}>z: {accData.z.toFixed(2)}</Text>
-
-      <Text style={styles.header}>Gyroscope</Text>
-      <Text style={styles.text}>x: {gyroData.x.toFixed(2)}</Text>
-      <Text style={styles.text}>y: {gyroData.y.toFixed(2)}</Text>
-      <Text style={styles.text}>z: {gyroData.z.toFixed(2)}</Text>
+      <View style={styles.section}>
+        <Text style={styles.header}><FontAwesome5 name="heartbeat" size={24} color="#3A8DFF" /> Sensors Data</Text>
+        <View style={styles.card}>
+          <Text style={styles.cardText}>Accelerometer:</Text>
+          <Text style={styles.cardText}>x: {accData.x.toFixed(2)} y: {accData.y.toFixed(2)} z: {accData.z.toFixed(2)}</Text>
+          <Text style={styles.cardText}>Gyroscope:</Text>
+          <Text style={styles.cardText}>x: {gyroData.x.toFixed(2)} y: {gyroData.y.toFixed(2)} z: {gyroData.z.toFixed(2)}</Text>
+        </View>
+      </View>
 
       {fallDetected && timer > 0 && (
-        <View>
-          <Text style={styles.alert}>Fall detected! Sending alert in {timer}s</Text>
-          <Button title="Cancel" onPress={cancelAlert} />
+        <View style={styles.alertBox}>
+          <MaterialIcons name="warning" size={28} color="white" />
+          <Text style={styles.alertText}>Fall detected! Sending alert in {timer}s</Text>
+          <Button title="Cancel" color="#FF6B6B" onPress={cancelAlert} />
         </View>
       )}
 
-      {alertCancelled && <Text style={styles.cancelled}>Alert Cancelled</Text>}
-
       {fallDetected && timer === 0 && !alertCancelled && location && (
-        <View style={{ marginTop: 20 }}>
-          <Text style={styles.alert}>Alert sent! Your location:</Text>
+        <View style={styles.section}>
+          <Text style={styles.header}><FontAwesome5 name="hospital" size={24} color="#3A8DFF" /> Emergency Response</Text>
           <MapView
-            style={{ width: '100%', height: 250 }}
+            style={{ width: '100%', height: 250, borderRadius: 10, marginVertical: 10 }}
             initialRegion={{
               latitude: location.latitude,
               longitude: location.longitude,
@@ -171,40 +171,41 @@ export default function HomeScreen({ navigation, profile }) {
             <Marker coordinate={location} title="You are here" pinColor="red" />
           </MapView>
 
-          <Text style={{ fontSize: 18, fontWeight: 'bold', marginTop: 10 }}>Nearby Hospitals:</Text>
-          {hospitals.map((h, index) => (
-            <View key={index} style={styles.hospitalItem}>
-              <Text>🏥 {h.name}</Text>
-              <Text>📍 {h.formatted_address}</Text>
-              {h.formatted_phone_number && <Text>📞 {h.formatted_phone_number}</Text>}
-              <Text
-                style={styles.mapLink}
-                onPress={() =>
-                  Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${h.geometry.location.lat},${h.geometry.location.lng}`)
-                }
-              >
-                View on Map
-              </Text>
-            </View>
+          <Text style={styles.subHeader}>Nearby Hospitals:</Text>
+          {hospitals.map((h, i) => (
+            <TouchableOpacity
+              key={i}
+              style={styles.hospitalCard}
+              onPress={() => Linking.openURL(`https://maps.google.com/?q=${h.geometry.location.lat},${h.geometry.location.lng}`)}
+            >
+              <Text style={styles.hospitalName}>{h.name}</Text>
+              <Text style={styles.hospitalAddress}>{h.formatted_address}</Text>
+              {h.formatted_phone_number && <Text style={styles.hospitalPhone}>📞 {h.formatted_phone_number}</Text>}
+            </TouchableOpacity>
           ))}
 
-          <Button title="Rescue Arrived" onPress={rescueArrived} />
+          <Button title="Rescue Arrived" color="#4CAF50" onPress={rescueArrived} />
         </View>
       )}
 
-      <View style={{ marginTop: 20 }}>
-        <Button title="Profile" onPress={() => navigation.navigate('Profile')} />
+      <View style={{ marginVertical: 20 }}>
+        <Button title="Go to Profile" color="#3A8DFF" onPress={() => navigation.navigate('Profile')} />
       </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 10 },
-  header: { fontSize: 22, fontWeight: 'bold', marginTop: 20 },
-  text: { fontSize: 18, margin: 5 },
-  alert: { fontSize: 20, color: 'red', marginTop: 10, fontWeight: 'bold', textAlign: 'center' },
-  cancelled: { fontSize: 18, color: 'green', marginTop: 10, fontWeight: 'bold' },
-  hospitalItem: { padding: 5, borderBottomWidth: 1, borderColor: '#ccc', marginBottom: 5 },
-  mapLink: { color: 'blue', textDecorationLine: 'underline' },
+  container: { flex: 1, padding: 10, backgroundColor: '#F0F4F8' },
+  section: { marginVertical: 10 },
+  header: { fontSize: 22, fontWeight: 'bold', color: '#3A8DFF', marginBottom: 10 },
+  subHeader: { fontSize: 18, fontWeight: 'bold', marginTop: 10, marginBottom: 5 },
+  card: { backgroundColor: 'white', padding: 15, borderRadius: 10, elevation: 2, marginBottom: 10 },
+  cardText: { fontSize: 16, marginBottom: 5 },
+  alertBox: { backgroundColor: '#FF6B6B', padding: 15, borderRadius: 10, marginVertical: 10, alignItems: 'center' },
+  alertText: { color: 'white', fontWeight: 'bold', fontSize: 16, marginVertical: 5 },
+  hospitalCard: { backgroundColor: 'white', padding: 10, borderRadius: 8, marginBottom: 8, elevation: 1 },
+  hospitalName: { fontWeight: 'bold', fontSize: 16, color: '#3A8DFF' },
+  hospitalAddress: { fontSize: 14, color: '#555' },
+  hospitalPhone: { fontSize: 14, color: '#555' },
 });

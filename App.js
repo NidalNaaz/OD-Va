@@ -46,7 +46,14 @@ export default function App() {
 
   return (
     <NavigationContainer>
-      <Stack.Navigator initialRouteName="Home">
+      <Stack.Navigator
+        initialRouteName="Home"
+        screenOptions={{
+          headerStyle: { backgroundColor: '#3A8DFF' },
+          headerTintColor: 'white',
+          headerTitleStyle: { fontWeight: 'bold' },
+        }}
+      >
         <Stack.Screen name="Home">
           {props => <HomeScreen {...props} profile={profile} />}
         </Stack.Screen>
