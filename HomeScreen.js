@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Button } from 'react-native';
 import { Accelerometer, Gyroscope } from 'expo-sensors';
+import * as Location from 'expo-location';
+import MapView, { Marker } from 'react-native-maps';
 
 export default function HomeScreen({ navigation }) {
   const [accData, setAccData] = useState({ x: 0, y: 0, z: 0 });
@@ -8,7 +10,7 @@ export default function HomeScreen({ navigation }) {
   const [fallDetected, setFallDetected] = useState(false);
   const [timer, setTimer] = useState(0);
   const [alertCancelled, setAlertCancelled] = useState(false);
-  const [alertSent, setAlertSent] = useState(false);
+  const [location, setLocation] = useState(null);
 
   let fallStartTime = null;
   const FREE_FALL_THRESHOLD = 0.5;
@@ -24,9 +26,8 @@ export default function HomeScreen({ navigation }) {
       const magnitude = Math.sqrt(data.x ** 2 + data.y ** 2 + data.z ** 2);
       const currentTime = Date.now();
 
-      if (magnitude < FREE_FALL_THRESHOLD && !fallStartTime) {
-        fallStartTime = currentTime;
-      }
+      if (magnitude < FREE_FALL_THRESHOLD && !fallStartTime) fallStartTime = currentTime;
+
       if (fallStartTime && currentTime - fallStartTime < FALL_TIME_WINDOW) {
         if (magnitude > IMPACT_THRESHOLD && !fallDetected) {
           setFallDetected(true);
@@ -34,36 +35,50 @@ export default function HomeScreen({ navigation }) {
           fallStartTime = null;
         }
       }
-      if (fallStartTime && currentTime - fallStartTime >= FALL_TIME_WINDOW) {
-        fallStartTime = null;
-      }
+
+      if (fallStartTime && currentTime - fallStartTime >= FALL_TIME_WINDOW) fallStartTime = null;
     });
 
     const gyroSub = Gyroscope.addListener(data => setGyroData(data));
     return () => { accSub.remove(); gyroSub.remove(); };
   }, [fallDetected]);
 
+  // Countdown timer and location fetching
   useEffect(() => {
     if (timer > 0) {
       const interval = setInterval(() => setTimer(t => t - 1), 1000);
       return () => clearInterval(interval);
-    } else if (timer === 0 && fallDetected) {
-      setAlertSent(true);
+    } else if (fallDetected && !alertCancelled && timer === 0) {
+      // Timer ended → get location
+      (async () => {
+        let { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          alert('Permission to access location was denied!');
+          return;
+        }
+        let loc = await Location.getCurrentPositionAsync({});
+        setLocation({
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude,
+          latitudeDelta: 0.005,
+          longitudeDelta: 0.005,
+        });
+      })();
     }
   }, [timer]);
 
   const cancelAlert = () => {
+    setAlertCancelled(true);
     setFallDetected(false);
     setTimer(0);
-    setAlertSent(false);
-    setAlertCancelled(true);
+    setLocation(null);
     setTimeout(() => setAlertCancelled(false), 5000);
   };
 
-  const resetAlert = () => {
+  const rescueArrived = () => {
     setFallDetected(false);
     setTimer(0);
-    setAlertSent(false);
+    setLocation(null);
   };
 
   return (
@@ -78,19 +93,24 @@ export default function HomeScreen({ navigation }) {
       <Text style={styles.text}>y: {gyroData.y.toFixed(2)}</Text>
       <Text style={styles.text}>z: {gyroData.z.toFixed(2)}</Text>
 
-      {fallDetected && !alertSent && (
+      {fallDetected && timer > 0 && (
         <View>
           <Text style={styles.alert}>Fall detected! Sending alert in {timer}s</Text>
           <Button title="Cancel Alert" onPress={cancelAlert} />
         </View>
       )}
 
-      {alertCancelled && <Text style={styles.cancelled}>Alert Cancelled</Text>}
+      {alertCancelled && <Text style={styles.alert}>Alert cancelled</Text>}
 
-      {alertSent && (
+      {fallDetected && timer === 0 && !alertCancelled && (
         <View>
           <Text style={styles.alert}>🚨 ALERT SENT!</Text>
-          <Button title="Rescue Arrived" onPress={resetAlert} />
+          {location && (
+            <MapView style={styles.map} region={location}>
+              <Marker coordinate={location} title="Accident Location" />
+            </MapView>
+          )}
+          <Button title="Rescue Arrived" onPress={rescueArrived} />
         </View>
       )}
 
@@ -106,5 +126,5 @@ const styles = StyleSheet.create({
   header: { fontSize: 22, fontWeight: 'bold', marginTop: 20 },
   text: { fontSize: 18, margin: 5 },
   alert: { fontSize: 20, color: 'red', marginTop: 20, fontWeight: 'bold', textAlign: 'center' },
-  cancelled: { fontSize: 18, color: 'green', marginTop: 10, fontWeight: 'bold' },
+  map: { width: 300, height: 300, marginTop: 20 },
 });
