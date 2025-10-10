@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Button } from 'react-native';
+import { View, Text, StyleSheet, Button, Alert, Linking } from 'react-native';
 import { Accelerometer, Gyroscope } from 'expo-sensors';
 import * as Location from 'expo-location';
-import MapView, { Marker } from 'react-native-maps';
 
-export default function HomeScreen({ navigation }) {
+export default function HomeScreen({ navigation, profile }) {
   const [accData, setAccData] = useState({ x: 0, y: 0, z: 0 });
   const [gyroData, setGyroData] = useState({ x: 0, y: 0, z: 0 });
   const [fallDetected, setFallDetected] = useState(false);
@@ -17,6 +16,18 @@ export default function HomeScreen({ navigation }) {
   const IMPACT_THRESHOLD = 2.5;
   const FALL_TIME_WINDOW = 1000;
 
+  // Request location permission
+  useEffect(() => {
+    const requestPermissions = async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permissions required', 'Please allow location permission.');
+      }
+    };
+    requestPermissions();
+  }, []);
+
+  // Accelerometer & Gyroscope
   useEffect(() => {
     Accelerometer.setUpdateInterval(50);
     Gyroscope.setUpdateInterval(50);
@@ -36,34 +47,26 @@ export default function HomeScreen({ navigation }) {
         }
       }
 
-      if (fallStartTime && currentTime - fallStartTime >= FALL_TIME_WINDOW) fallStartTime = null;
+      if (fallStartTime && currentTime - fallStartTime >= FALL_TIME_WINDOW) {
+        fallStartTime = null;
+      }
     });
 
     const gyroSub = Gyroscope.addListener(data => setGyroData(data));
-    return () => { accSub.remove(); gyroSub.remove(); };
+
+    return () => {
+      accSub.remove();
+      gyroSub.remove();
+    };
   }, [fallDetected]);
 
-  // Countdown timer and location fetching
+  // Countdown timer
   useEffect(() => {
     if (timer > 0) {
       const interval = setInterval(() => setTimer(t => t - 1), 1000);
       return () => clearInterval(interval);
     } else if (fallDetected && !alertCancelled && timer === 0) {
-      // Timer ended → get location
-      (async () => {
-        let { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          alert('Permission to access location was denied!');
-          return;
-        }
-        let loc = await Location.getCurrentPositionAsync({});
-        setLocation({
-          latitude: loc.coords.latitude,
-          longitude: loc.coords.longitude,
-          latitudeDelta: 0.005,
-          longitudeDelta: 0.005,
-        });
-      })();
+      openSMS();
     }
   }, [timer]);
 
@@ -81,6 +84,30 @@ export default function HomeScreen({ navigation }) {
     setLocation(null);
   };
 
+  const openSMS = async () => {
+    try {
+      const loc = await Location.getCurrentPositionAsync({});
+      setLocation({
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
+      });
+
+      const firstContact = profile.emergencyContacts[0];
+      const message = `SOS! Emergency detected!\nName: ${profile.name}\nAge: ${profile.age}\nBlood Group: ${profile.bloodGroup}\nPhone: ${profile.phone}\nLocation: https://maps.google.com/?q=${loc.coords.latitude},${loc.coords.longitude}`;
+
+      const smsUrl = `sms:${firstContact.number}?body=${encodeURIComponent(message)}`;
+      const canOpen = await Linking.canOpenURL(smsUrl);
+      if (canOpen) {
+        await Linking.openURL(smsUrl);
+      } else {
+        Alert.alert('Error', 'Unable to open SMS app.');
+      }
+    } catch (e) {
+      console.log('openSMS error', e);
+      Alert.alert('Error', 'Unable to open SMS app.');
+    }
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.header}>Accelerometer</Text>
@@ -96,21 +123,24 @@ export default function HomeScreen({ navigation }) {
       {fallDetected && timer > 0 && (
         <View>
           <Text style={styles.alert}>Fall detected! Sending alert in {timer}s</Text>
-          <Button title="Cancel Alert" onPress={cancelAlert} />
+          <Button title="Cancel" onPress={cancelAlert} />
         </View>
       )}
 
-      {alertCancelled && <Text style={styles.alert}>Alert cancelled</Text>}
+      {alertCancelled && <Text style={styles.cancelled}>Alert Cancelled</Text>}
 
-      {fallDetected && timer === 0 && !alertCancelled && (
-        <View>
-          <Text style={styles.alert}>🚨 ALERT SENT!</Text>
-          {location && (
-            <MapView style={styles.map} region={location}>
-              <Marker coordinate={location} title="Accident Location" />
-            </MapView>
-          )}
+      {fallDetected && timer === 0 && !alertCancelled && location && (
+        <View style={styles.mapContainer}>
+          <Text style={styles.alert}>Alert sent! View your location:</Text>
           <Button title="Rescue Arrived" onPress={rescueArrived} />
+          <Text
+            style={styles.mapLink}
+            onPress={() =>
+              Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`)
+            }
+          >
+            Open Map
+          </Text>
         </View>
       )}
 
@@ -122,9 +152,11 @@ export default function HomeScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 10 },
   header: { fontSize: 22, fontWeight: 'bold', marginTop: 20 },
   text: { fontSize: 18, margin: 5 },
   alert: { fontSize: 20, color: 'red', marginTop: 20, fontWeight: 'bold', textAlign: 'center' },
-  map: { width: 300, height: 300, marginTop: 20 },
+  cancelled: { fontSize: 18, color: 'green', marginTop: 10, fontWeight: 'bold' },
+  mapContainer: { marginTop: 20, alignItems: 'center' },
+  mapLink: { color: 'blue', marginTop: 10, textDecorationLine: 'underline', fontSize: 16 },
 });
